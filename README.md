@@ -16,7 +16,7 @@ First, create a virtual environment and install all required packages.
 sudo apt update
 sudo apt install libosmesa6-dev libegl1-mesa libgl1-mesa-glx libglfw3 
 conda env create -f conda_env.yml 
-conda activate drm
+conda activate mentor
 pip3 install torch==1.12.1+cu116 torchvision==0.13.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
 ```
 
