@@ -5,7 +5,7 @@
 </p>
 
 
-This repository is the official PyTorch implementation of **MENTOR**. **MENTOR is a highly efficient visual RL algorithm that excels in both simulation and real-world complex robotic learning tasks.
+This repository is the official PyTorch implementation of **MENTOR**. **MENTOR** is a highly efficient visual RL algorithm that excels in both simulation and real-world complex robotic learning tasks.
 
 
 # 🛠️ Installation Instructions
@@ -54,7 +54,6 @@ If you would like to run MENTOR on [MetaWorld](https://meta-world.github.io/), p
 
 ```bash
 python train_mw.py task=coffee-push agent=mentor_mw
-python train_mw.py task=disassemble agent=mentor_mw
 ```
 
 If you would like to run MENTOR on Adroit, please use train_adroit.py to train MENTOR policies on different configs.
@@ -63,10 +62,10 @@ If you would like to run MENTOR on Adroit, please use train_adroit.py to train M
 python train_adroit.py task=pen agent=mentor_adroit
 ```
 
-You can also specify the configs of MoE and Task-oriented Perturbation in MENTOR by adding following command:
+You can also specify the configs of MoE and task-oriented perturbation in MENTOR using following command:
 
 ```bash
-python train_dmc.py task=dog_walk agent=mentor moe_gate_dim=256 moe_hidden_dim=256 tp_set_size=10
+python train_dmc.py task=dog_walk agent=mentor moe_gate_dim=256 moe_hidden_dim=256 tp_set_size=16
 ```
 
 ## 📝 Citation
@@ -84,4 +83,4 @@ If you use our method or code in your research, please consider citing the paper
 
 ## 🙏 Acknowledgement
 
-MENTOR is licensed under the MIT license. MuJoCo and DeepMind Control Suite are licensed under the Apache 2.0 license. We would like to thank DrM and DrQ-v2 authors for open-sourcing the codebase. Our implementation builds on top of their repository.
+MENTOR is licensed under the MIT license. MuJoCo and DeepMind Control Suite are licensed under the Apache 2.0 license. We would like to thank [DrM](https://github.com/XuGW-Kevin/DrM) and [DrQv2](https://github.com/facebookresearch/drqv2) authors for open-sourcing the codebase. Our implementation builds on top of their repository.
