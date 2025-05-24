@@ -9,7 +9,6 @@ agent:
   target_dormant_ratio: 0.2
   target_lambda: 0.5
   dormant_temp: 10
-  target_lambda: ???
   lambda_temp: 50
   perturb_interval: 50000
   min_perturb_factor: 0.2
