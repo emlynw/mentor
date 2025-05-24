@@ -311,17 +311,7 @@ class MENTORAgent:
         return 0.8 / (1 + math.exp(-self.dormant_temp * (self.dormant_ratio - self.target_dormant_ratio)))
 
     def stddev(self, step):
-        if self.stddev_type == "max":
-            return max(utils.schedule(self.stddev_schedule, step), self.stddev_clip)
-        elif self.stddev_type == "dormant":
-            return self.dormant_stddev
-        elif self.stddev_type == "awake":
-            if self.awaken_step == None:
-                return self.dormant_stddev
-            else:
-                return max(self.dormant_stddev, utils.schedule(self.stddev_schedule, step - self.awaken_step))
-        else:
-            raise NotImplementedError(self.stddev_type)
+        return self.dormant_stddev
 
     def perturb_factor(self):
         return min(max(self.min_perturb_factor, 1 - self.perturb_rate * self.dormant_ratio), self.max_perturb_factor)
