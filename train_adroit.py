@@ -131,7 +131,8 @@ class Workspace:
         while eval_until_episode(episode):
             n_goal_achieved_total = 0
             time_step = self.eval_env.reset()
-            self.video_recorder.init(self.eval_env, enabled=(episode == 0))
+            # self.video_recorder.init(self.eval_env, enabled=(episode == 0))
+            self.video_recorder.init(self.eval_env, enabled=False)
             while not time_step.last():
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     observation = time_step.observation

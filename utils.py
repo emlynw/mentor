@@ -14,8 +14,7 @@ from queue import PriorityQueue
 
 import sys
 sys.path.append(".")
-sys.path.append("..")
-from moe.layer import MoE
+
 
 class eval_mode:
     def __init__(self, *models):
