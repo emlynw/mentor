@@ -379,26 +379,8 @@ class MENTORAgent:
 
         if obs_sensor is not None:
             obs_sensor = torch.as_tensor(obs_sensor, device=self.device)
-        
-        if self.stddev_type == "drqv2":
-            stddev = utils.schedule(self.stddev_schedule, step)
-        elif self.stddev_type == "max":
-            stddev = max(utils.schedule(self.stddev_schedule, step),
-                         self.stddev)
-        elif self.stddev_type == "dormant":
-            stddev = self.stddev
-        elif self.stddev_type == "awake":
-            if self.awaken_step == None:
-                stddev = self.stddev
-            else:
-                stddev = max(
-                    self.stddev,
-                    utils.schedule(self.stddev_schedule,
-                                   step - self.awaken_step))
-        else:
-            raise NotImplementedError(self.stddev_type)
 
-        dist, _ = self.actor(obs, stddev, obs_sensor)
+        dist, _ = self.actor(obs, self.stddev(step), obs_sensor)
         if eval_mode:
             action = dist.mean
         else:
