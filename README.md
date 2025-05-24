@@ -65,7 +65,7 @@ python train_adroit.py task=pen agent=mentor_adroit
 You can also specify the configs of MoE and task-oriented perturbation in MENTOR using following command:
 
 ```bash
-python train_dmc.py task=dog_walk agent=mentor moe_gate_dim=256 moe_hidden_dim=256 tp_set_size=16
+python train_dmc.py task=dog_walk agent=mentor agent.moe_gate_dim=256 agent.moe_hidden_dim=256 agent.tp_set_size=16
 ```
 
 ## 📝 Citation
