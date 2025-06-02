@@ -18,7 +18,7 @@ from dm_env import specs
 import adroit
 
 from logger import Logger
-from replay_buffer import ReplayBufferStorage, make_replay_loader
+from replay_buffer_adroit import ReplayBufferStorage, make_replay_loader
 from video import TrainVideoRecorder, VideoRecorder
 import wandb
 import math
@@ -102,7 +102,7 @@ class Workspace:
             self._discount)
         self._replay_iter = None
 
-        self.video_recorder = VideoRecorder(
+        self.video_recorder = TrainVideoRecorder(
             self.work_dir if self.cfg.save_video else None)
 
     @property
@@ -128,11 +128,12 @@ class Workspace:
         n_eval_episode = self.cfg.num_eval_episodes
         eval_until_episode = utils.Until(n_eval_episode)
         total_success = 0.0
+        i = 0
         while eval_until_episode(episode):
             n_goal_achieved_total = 0
             time_step = self.eval_env.reset()
             # self.video_recorder.init(self.eval_env, enabled=(episode == 0))
-            self.video_recorder.init(self.eval_env, enabled=False)
+            self.video_recorder.init(time_step.observation, enabled=True)
             while not time_step.last():
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     observation = time_step.observation
@@ -142,7 +143,7 @@ class Workspace:
                                             obs_sensor=time_step.observation_sensor)
                 time_step = self.eval_env.step(action)
                 n_goal_achieved_total += time_step.n_goal_achieved
-                self.video_recorder.record(self.eval_env)
+                self.video_recorder.record(time_step.observation)
                 total_reward += time_step.reward
                 step += 1
 
@@ -157,7 +158,8 @@ class Workspace:
                 total_success += 1
 
             episode += 1
-            self.video_recorder.save(f'{self.global_frame}.mp4')
+            self.video_recorder.save(f'{self.global_frame}_{i}.mp4')
+            i += 1
         success_rate_standard = total_success / n_eval_episode
         episode_reward_standard = total_reward / episode
         episode_length_standard = step * self.cfg.action_repeat / episode

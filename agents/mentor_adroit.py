@@ -414,15 +414,15 @@ class MENTORAgent:
                 stddev = utils.schedule(self.stddev_schedule, step)
             elif self.stddev_type == "max":
                 stddev = max(utils.schedule(self.stddev_schedule, step),
-                             self.stddev)
+                             self.stddev(step))
             elif self.stddev_type == "dormant":
-                stddev = self.stddev
+                stddev = self.stddev(step)
             elif self.stddev_type == "awake":
                 if self.awaken_step == None:
-                    stddev = self.stddev
+                    stddev = self.stddev(step)
                 else:
                     stddev = max(
-                        self.stddev,
+                        self.stddev(step),
                         utils.schedule(self.stddev_schedule,
                                        step - self.awaken_step))
             else:
@@ -480,15 +480,15 @@ class MENTORAgent:
             stddev = utils.schedule(self.stddev_schedule, step)
         elif self.stddev_type == "max":
             stddev = max(utils.schedule(self.stddev_schedule, step),
-                         self.stddev)
+                         self.stddev(step))
         elif self.stddev_type == "dormant":
-            stddev = self.stddev
+            stddev = self.stddev(step)
         elif self.stddev_type == "awake":
             if self.awaken_step == None:
-                stddev = self.stddev
+                stddev = self.stddev(step)
             else:
                 stddev = max(
-                    self.stddev,
+                    self.stddev(step),
                     utils.schedule(self.stddev_schedule,
                                    step - self.awaken_step))
         else:

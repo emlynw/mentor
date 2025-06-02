@@ -15,14 +15,14 @@ update_every_steps: 2
 eval_every_frames: 10000
 num_eval_episodes: 10
 # snapshot
-save_snapshot: False
+save_snapshot: true
 save_interval: 10000
 load_from_id: false
 load_id: 0
 # wandb
 use_wandb: true
 # replay buffer
-replay_buffer_size: 1000000
+replay_buffer_size: 200000
 replay_buffer_num_workers: 4
 nstep: 3
 batch_size: 256
