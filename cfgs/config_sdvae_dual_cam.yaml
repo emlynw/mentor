@@ -1,28 +1,27 @@
 defaults:
   - _self_
-  - task@_global_: hammer
-  - agent@_global_: mentor_adroit
+  - task@_global_: fruit_gym_multi
+  - agent@_global_: mentor_states_pretrained
   - override hydra/launcher: submitit_local
 
 # task settings
 frame_stack: 3
-action_repeat: 2
+action_repeat: 1
 discount: 0.99
+max_episode_steps: 150
 # train settings
-num_seed_frames: 1000
+num_seed_frames: 4000
 update_every_steps: 2
 # eval
 eval_every_frames: 10000
-num_eval_episodes: 2
+num_eval_episodes: 10
 # snapshot
-save_snapshot: true
-save_interval: 10000
-load_from_id: false
-load_id: 0
+save_model: true
+save_buffer: true
 # wandb
 use_wandb: true
 # replay buffer
-replay_buffer_size: 200000
+replay_buffer_size: 750000
 replay_buffer_num_workers: 4
 nstep: 3
 batch_size: 256
@@ -37,6 +36,13 @@ experiment: exp
 # agent
 lr: 1e-4
 feature_dim: 50
+utd: 1
+# resolutions
+aug_res: 112
+state_res: 112
+video_res: 224
+# Augmentations
+augment: true
 
 hydra:
   run:

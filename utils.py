@@ -198,6 +198,24 @@ def cal_dormant_ratio(model, *inputs, percentage=0.025, seq=False, metrics=None)
 
     return dormant_neurons / total_neurons, metrics
 
+def get_module_by_name(module, name):
+    """
+    Gets a submodule from a module by its string name.
+    Args:
+        module (nn.Module): The parent module.
+        name (str): The dot-separated name of the submodule.
+    Returns:
+        nn.Module: The requested submodule.
+    """
+    parts = name.split('.')
+    # Handle the case of the root module itself when name is ''
+    if name == '':
+        return module
+    
+    for part in parts:
+        module = getattr(module, part)
+    return module
+
 
 def perturb(net, optimizer, perturb_factor, tp_set=None, name="actor"):
     if tp_set is None:
@@ -291,23 +309,72 @@ class models_tuple(object):
         metrics['tp_set_mean_episode_reward'] = np.mean(self.episode_reward)
         return metrics
 
+    # def cal_params_stats(self, models, moe_expert=False, moe_gate=False):
+    #     weights_and_biases = []
+    #     for name, param in models[0].named_modules():
+    #         if not (moe_expert or moe_gate) and "moe" not in name and (isinstance(param, nn.Linear) or isinstance(param, nn.Conv2d)) and "." in name:
+    #             layer_weights = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].weight.data for model in models])
+    #             layer_biases = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].bias.data for model in models])
+    #             weights_and_biases.append(layer_weights)
+    #             weights_and_biases.append(layer_biases)
+    #         elif (moe_expert or moe_gate) and isinstance(param, nn.Linear) and "." in name:
+    #             layer_weights = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].weight.data for model in models])
+    #             layer_biases = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].bias.data for model in models])
+    #             weights_and_biases.append(layer_weights)
+    #             weights_and_biases.append(layer_biases)
+    #         elif not (moe_expert or moe_gate) and isinstance(param, nn.Linear):
+    #             layer_weights = torch.stack([model.weight.data for model in models])
+    #             weights_and_biases.append(layer_weights)
+    #     params_stats = [(param.mean(dim=0), torch.clamp(param.std(dim=0), min=1e-7)) for param in weights_and_biases]
+    #     return params_stats
+
     def cal_params_stats(self, models, moe_expert=False, moe_gate=False):
-        weights_and_biases = []
-        for name, param in models[0].named_modules():
-            if not (moe_expert or moe_gate) and "moe" not in name and (isinstance(param, nn.Linear) or isinstance(param, nn.Conv2d)) and "." in name:
-                layer_weights = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].weight.data for model in models])
-                layer_biases = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].bias.data for model in models])
-                weights_and_biases.append(layer_weights)
-                weights_and_biases.append(layer_biases)
-            elif (moe_expert or moe_gate) and isinstance(param, nn.Linear) and "." in name:
-                layer_weights = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].weight.data for model in models])
-                layer_biases = torch.stack([model._modules[name.split(".")[0]][int(name.split(".")[1])].bias.data for model in models])
-                weights_and_biases.append(layer_weights)
-                weights_and_biases.append(layer_biases)
-            elif not (moe_expert or moe_gate) and isinstance(param, nn.Linear):
-                layer_weights = torch.stack([model.weight.data for model in models])
-                weights_and_biases.append(layer_weights)
-        params_stats = [(param.mean(dim=0), torch.clamp(param.std(dim=0), min=1e-7)) for param in weights_and_biases]
+        # If the list of models is empty, there are no stats to calculate.
+        if not models:
+            return []
+
+        params_stats = []
+        # Use the first model in the list as a reference for architecture
+        for layer_name, layer_module in models[0].named_modules():
+            
+            # --- Define conditions to select which layers to process ---
+            is_linear_or_conv = isinstance(layer_module, (nn.Linear, nn.Conv2d))
+            is_moe_layer = "moe" in layer_name
+
+            # Skip layers that are not Linear or Conv2d
+            if not is_linear_or_conv:
+                continue
+            
+            # Logic to include/exclude layers based on moe_expert/moe_gate flags
+            if moe_expert or moe_gate:
+                # If we are in MoE mode, only process layers that are part of MoE
+                if not is_moe_layer:
+                    continue
+            else:
+                # If we are in the default mode (e.g., "actor_enc"), skip MoE layers
+                if is_moe_layer:
+                    continue
+
+            # --- If the layer is selected, gather it from all models in the set ---
+            try:
+                # Use the helper to get the corresponding layer from each model in the list
+                corresponding_layers = [get_module_by_name(m, layer_name) for m in models]
+                
+                # --- Stack weights and biases to calculate stats ---
+                layer_weights = torch.stack([l.weight.data for l in corresponding_layers])
+                params_stats.append((layer_weights.mean(dim=0), torch.clamp(layer_weights.std(dim=0), min=1e-7)))
+
+                # Check if the layers have a bias attribute before trying to access it
+                if corresponding_layers[0].bias is not None:
+                    layer_biases = torch.stack([l.bias.data for l in corresponding_layers])
+                    params_stats.append((layer_biases.mean(dim=0), torch.clamp(layer_biases.std(dim=0), min=1e-7)))
+
+            except (AttributeError, RuntimeError) as e:
+                print(f"Skipping layer '{layer_name}' due to an error: {e}")
+                # This might happen if models in the set have slightly different architectures
+                # or if a layer is missing a weight/bias.
+                continue
+                
         return params_stats
 
     def sample_params(self, params_stats):
@@ -318,16 +385,46 @@ class models_tuple(object):
         return sampled_params
 
     def sampled_model(self, model, sampled_params, moe_expert=False, moe_gate=False):
-        i = 0
-        for name, param in model.named_modules():
-            if not (moe_expert or moe_gate) and "moe" not in name and (isinstance(param, nn.Linear) or isinstance(param, nn.Conv2d)):
-                param.weight.data = sampled_params[2 * i]
-                param.bias.data = sampled_params[2 * i + 1]
-                i += 1
-            if (moe_expert or moe_gate) and isinstance(param, nn.Linear):
-                param.weight.data = sampled_params[2 * i]
-                param.bias.data = sampled_params[2 * i + 1]
-                i += 1
-            if not (moe_expert or moe_gate) and isinstance(param, nn.Linear):
-                param.weight.data = sampled_params[i]
-                i += 1
+        # If there are no sampled parameters, there's nothing to do.
+        if not sampled_params:
+            return
+
+        # A single index to track our position in the flat list of sampled parameters.
+        param_idx = 0
+        
+        # Iterate through the modules of the model we want to update.
+        for layer_name, layer_module in model.named_modules():
+
+            # --- Define conditions to select which layers to process ---
+            is_linear_or_conv = isinstance(layer_module, (nn.Linear, nn.Conv2d))
+            is_moe_layer = "moe" in layer_name
+
+            # Skip modules that are not Linear or Conv2d layers.
+            if not is_linear_or_conv:
+                continue
+            
+            # Logic to include/exclude layers based on moe_expert/moe_gate flags
+            if moe_expert or moe_gate:
+                if not is_moe_layer:
+                    continue
+            else: # Default case
+                if is_moe_layer:
+                    continue
+
+            # --- If the layer is selected, assign its new parameters ---
+            # Check if we still have enough parameters in our list.
+            if param_idx >= len(sampled_params):
+                # print(f"Warning: Ran out of sampled_params while trying to update layer '{layer_name}'.")
+                break
+
+            # Assign the weight
+            layer_module.weight.data = sampled_params[param_idx]
+            param_idx += 1
+
+            # If the layer has a bias, assign it from the next spot in the list.
+            if layer_module.bias is not None:
+                if param_idx >= len(sampled_params):
+                    # print(f"Warning: Ran out of sampled_params for bias of layer '{layer_name}'.")
+                    break
+                layer_module.bias.data = sampled_params[param_idx]
+                param_idx += 1

@@ -286,12 +286,10 @@ def main(cfgs):
     root_dir = Path.cwd()
     workspace = W(cfgs)
     if cfgs.load_from_id:
-        snapshot = root_dir / 'snapshots' / f'snapshot_{cfgs.load_id}.pt'
-    else:
-        snapshot = root_dir / 'snapshot.pt'
-    if snapshot.exists():
-        print(f'resuming: {snapshot}')
-        workspace.load_snapshot()        
+        if cfgs.load_id is not None:
+            workspace.load_snapshot(cfgs.load_id) 
+        else:
+            workspace.load_snapshot()
     workspace.train()
 
 
