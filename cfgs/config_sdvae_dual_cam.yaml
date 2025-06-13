@@ -8,7 +8,7 @@ defaults:
 frame_stack: 3
 action_repeat: 1
 discount: 0.99
-max_episode_steps: 150
+max_episode_steps: 250
 # train settings
 num_seed_frames: 4000
 update_every_steps: 2
