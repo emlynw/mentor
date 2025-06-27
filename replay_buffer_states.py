@@ -164,19 +164,32 @@ class ReplayBuffer(IterableDataset):
         state = episode['state'][idx-1]
         next_state = episode['state'][idx+self._nstep-1]
         action = episode['action'][idx]
-        if episode['terminated'][idx]:
-            mask = 0.0
-        else:
-            mask = 1.0
-        mask = np.float32(mask)
-        mask = np.expand_dims(mask, axis=0)
+
         reward = 0.0
+        mask = 1.0  # Start with the assumption that we will bootstrap.
+
         for i in range(self._nstep):
-            step_reward = episode['reward'][idx + i]
-            reward = reward + self._discount**i * step_reward
+            step_idx = idx + i
+            step_reward = episode['reward'][step_idx]
+            reward += (self._discount**i) * step_reward
+            
+            is_terminated = episode['terminated'][step_idx]
+            is_truncated = episode['truncated'][step_idx]
+
+            # An episode end (of any kind) stops the n-step accumulation.
+            if is_terminated or is_truncated:
+                # ONLY if the episode was *terminated* do we prevent bootstrapping.
+                if is_terminated:
+                    mask = 0.0
+                
+                # If the episode was *truncated*, we still bootstrap (mask remains 1.0).
+                # In both cases, we must stop the loop.
+                break
         reward = reward.astype(np.float32)
         action = action.astype(np.float32)
         reward = np.expand_dims(reward, axis=0)
+        mask = np.float32(mask)
+        mask = np.expand_dims(mask, axis=0)
         return (img, state, action, reward, mask, next_img, next_state)
 
     def __iter__(self):
