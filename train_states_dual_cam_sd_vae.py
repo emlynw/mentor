@@ -245,10 +245,11 @@ class Workspace:
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
                 eval_reward = self.eval()
-                # if eval_reward > self.max_reward:
-                #     self.max_reward = eval_reward
                 if self.cfg.save_model:
                     self.save_model()
+                    if eval_reward > self.max_reward:
+                        self.max_reward = eval_reward
+                        self.save_model('snapshot_best.pt')
 
 
             # sample action
@@ -294,8 +295,8 @@ class Workspace:
             episode_step += 1
             self._global_step += 1
 
-    def save_model(self):
-        snapshot = self.work_dir / 'snapshot.pt'
+    def save_model(self, name="snapshot.pt"):
+        snapshot = self.work_dir / name
         keys_to_save = ['agent', 'timer', '_global_step', '_global_episode']
         payload = {k: self.__dict__[k] for k in keys_to_save}
         with snapshot.open('wb') as f:
