@@ -127,6 +127,7 @@ class Workspace:
         env = SDVAEWrapperDualCam(env, augment=self.cfg.augment, res=state_res, pad=4, image1_key="wrist1", image2_key="wrist2")
         env = StateFrameStack(env, frame_stack, stack_key='embedding', flatten=False)
         env = StateFrameStack(env, frame_stack, stack_key='state')
+        env = StateFrameStack(env, frame_stack, stack_key='priv_state')
         return env
 
     @property

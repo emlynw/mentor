@@ -42,7 +42,7 @@ aug_res: 112
 state_res: 112
 video_res: 224
 # Augmentations
-augment: false
+augment: true
 
 hydra:
   run:

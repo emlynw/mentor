@@ -13,13 +13,19 @@ import torchvision.models as models
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, moe_gate_dim=256, moe_hidden_dim=256, num_experts=32, top_k=4, dropout=0.1, state_dim=None):
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, moe_gate_dim=256, moe_hidden_dim=256, 
+                 num_experts=32, top_k=4, dropout=0.1, state_dim=None, state_feature_dim=32):
         super().__init__()
 
         self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim),
                                    nn.LayerNorm(feature_dim), nn.Tanh())
+        
+        self.state_trunk = nn.Sequential(
+            nn.Linear(state_dim, state_feature_dim),
+            nn.LayerNorm(state_feature_dim), nn.Tanh()
+        )      
 
-        self.policy1 = nn.Sequential(nn.Linear(feature_dim+state_dim, hidden_dim),
+        self.policy1 = nn.Sequential(nn.Linear(feature_dim+state_feature_dim, hidden_dim),
                                      nn.ReLU(inplace=True))
 
         self.policy2 = nn.Sequential(nn.ReLU(inplace=True),
@@ -38,7 +44,8 @@ class Actor(nn.Module):
 
     def forward(self, obs, std, obs_sensor=None, metrics=None):
         h = self.trunk(obs)
-        h = torch.cat([h, obs_sensor], dim=-1)
+        h_state = self.state_trunk(obs_sensor)
+        h = torch.cat([h, h_state], dim=-1)
         x = self.policy1(h)
         x, aux_loss = self.moe(x, metrics)
         
@@ -51,19 +58,26 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, state_dim, priv_state_dim):
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, state_dim, priv_state_dim, states_hidden_dim=64, states_feature_dim=32):
         super().__init__()
 
         self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim),
                                    nn.LayerNorm(feature_dim), nn.Tanh())
         
+        self.state_trunk = nn.Sequential(
+            nn.Linear(state_dim + priv_state_dim, states_hidden_dim),
+            nn.LayerNorm(states_hidden_dim), nn.ReLU(inplace=True),
+            nn.Linear(states_hidden_dim, states_feature_dim),
+            nn.LayerNorm(states_feature_dim), nn.Tanh()
+        )
+
         self.Q1 = nn.Sequential(
-            nn.Linear(feature_dim + state_dim + priv_state_dim + action_shape[0], hidden_dim),
+            nn.Linear(feature_dim + states_feature_dim + action_shape[0], hidden_dim),
             nn.ReLU(inplace=True), nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(inplace=True), nn.Linear(hidden_dim, 1))
 
         self.Q2 = nn.Sequential(
-            nn.Linear(feature_dim + state_dim + priv_state_dim + action_shape[0], hidden_dim),
+            nn.Linear(feature_dim + states_feature_dim + action_shape[0], hidden_dim),
             nn.ReLU(inplace=True), nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(inplace=True), nn.Linear(hidden_dim, 1))
 
@@ -71,7 +85,9 @@ class Critic(nn.Module):
 
     def forward(self, obs, action, obs_sensor=None, priv_state=None):
         h = self.trunk(obs)
-        h = torch.cat([h, obs_sensor, priv_state], dim=-1)
+        states = torch.cat([obs_sensor, priv_state], dim=-1)
+        h_state = self.state_trunk(states)
+        h = torch.cat([h, h_state], dim=-1)
         h_action = torch.cat([h, action], dim=-1)
         q1 = self.Q1(h_action)
         q2 = self.Q2(h_action)
@@ -80,13 +96,20 @@ class Critic(nn.Module):
 
 
 class VNetwork(nn.Module):
-    def __init__(self, repr_dim, feature_dim, hidden_dim, state_dim, priv_state_dim):
+    def __init__(self, repr_dim, feature_dim, hidden_dim, state_dim, priv_state_dim, states_hidden_dim=64, states_feature_dim=32):
         super().__init__()
 
         self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim),
                                    nn.LayerNorm(feature_dim), nn.Tanh())
+        
+        self.state_trunk = nn.Sequential(
+            nn.Linear(state_dim + priv_state_dim, states_hidden_dim),
+            nn.LayerNorm(states_hidden_dim), nn.ReLU(inplace=True),
+            nn.Linear(states_hidden_dim, states_feature_dim),
+            nn.LayerNorm(states_feature_dim), nn.Tanh()
+        )
 
-        self.V = nn.Sequential(nn.Linear(feature_dim+state_dim+priv_state_dim, hidden_dim),
+        self.V = nn.Sequential(nn.Linear(feature_dim+states_feature_dim, hidden_dim),
                                nn.ReLU(inplace=True),
                                nn.Linear(hidden_dim, hidden_dim),
                                nn.ReLU(inplace=True), nn.Linear(hidden_dim, 1))
@@ -95,7 +118,9 @@ class VNetwork(nn.Module):
 
     def forward(self, obs, obs_sensor=None, priv_state=None):
         h = self.trunk(obs)
-        h = torch.cat([h, obs_sensor, priv_state], dim=-1)
+        states = torch.cat([obs_sensor, priv_state], dim=-1)
+        h_state = self.state_trunk(states)
+        h = torch.cat([h, h_state], dim=-1)
         v = self.V(h)
         return v
 
@@ -406,13 +431,13 @@ class MENTORAgent:
             metrics['aux_loss_scale'] = self.aux_loss_scale
         
         # update predictor
-        metrics.update(self.update_predictor(obs.detach(), action, obs_sensor, priv_state))
+        metrics.update(self.update_predictor(obs.detach(), action, obs_sensor.detach(), priv_state.detach()))
 
         # update critic
         metrics.update(self.update_critic(obs, action, reward, mask, next_obs, step, obs_sensor, next_obs_sensor, priv_state, next_priv_state))
 
         # update actor
-        metrics.update(self.update_actor(obs.detach(), step, obs_sensor, priv_state))
+        metrics.update(self.update_actor(obs.detach(), step, obs_sensor.detach(), priv_state.detach()))
 
         # update critic target
         utils.soft_update_params(self.critic, self.critic_target, self.critic_target_tau)
