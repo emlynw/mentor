@@ -1,0 +1,60 @@
+defaults:
+  - _self_
+  - task@_global_: fruit_gym_multi
+  - agent@_global_: mentor_states_dual_cam_asym
+  - override hydra/launcher: submitit_local
+
+# task settings
+frame_stack: 3
+action_repeat: 1
+discount: 0.99
+max_episode_steps: 150
+# train settings
+num_seed_frames: 1000
+update_every_steps: 2
+# eval
+eval_every_frames: 10000
+num_eval_episodes: 2
+# snapshot
+save_model: true
+save_buffer: true
+# wandb
+use_wandb: true
+# replay buffer
+replay_buffer_size: 200000
+replay_buffer_num_workers: 4
+nstep: 3
+batch_size: 256
+# misc
+seed: 0
+device: cuda
+save_video: true
+save_train_video: false
+use_tb: true
+# experiment
+experiment: exp
+# agent
+lr: 1e-4
+feature_dim: 50
+
+utd: 1
+# resolutions
+state_res: 84
+video_res: 224
+# Remove blue channel
+remove_blue_channel: true
+
+hydra:
+  run:
+    dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}
+  sweep:
+    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${agent_cfg.experiment}
+    subdir: ${hydra.job.num}
+  launcher:
+    timeout_min: 4300
+    cpus_per_task: 10
+    gpus_per_node: 1
+    tasks_per_node: 1
+    mem_gb: 160
+    nodes: 1
+    submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${agent_cfg.experiment}/.slurm

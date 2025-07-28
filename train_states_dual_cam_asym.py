@@ -23,10 +23,9 @@ from logger import Logger
 import omegaconf
 
 
-from wrappers import ActionRepeat, VideoRecorder, CustomPixelObservation, StateFrameStack, ActionState, RotateImage, SERLObsWrapper
-from sd_vae_wrapper import SDVAEWrapperDualCam
+from wrappers import ActionRepeat, VideoRecorder, CustomPixelObservation, PixelFrameStack, StateFrameStack, ActionState, RotateImage, SERLObsWrapper, RemoveBlueChannel
 from gymnasium.wrappers import TimeLimit
-from replay_buffer_states import ReplayBufferStorage, make_replay_loader
+from replay_buffer_states_dual_cam_asym import ReplayBufferStorage, make_replay_loader
 import wandb
 import re
 import cv2
@@ -35,9 +34,10 @@ torch.backends.cudnn.benchmark = True
 
 
 def make_agent(obs_spec, action_spec, cfg):
-    cfg.obs_shape = int(obs_spec['embedding'].shape[0]*obs_spec['embedding'].shape[-1])
+    cfg.img_shape = tuple(obs_spec['wrist1'].shape)
     cfg.state_dim = int(np.prod(np.array([obs_spec['state'].shape])))
-    cfg.action_shape = action_spec.shape
+    cfg.priv_state_dim = int(np.prod(np.array([obs_spec['priv_state'].shape])))
+    cfg.action_shape = tuple(action_spec.shape)
     return hydra.utils.instantiate(cfg)
 
 
@@ -71,9 +71,14 @@ class Workspace:
                                                  vid_folder='train videos', state_res=self.cfg.state_res, video_res=self.cfg.video_res)
         self.eval_env = self.create_environment(self.cfg.task_name, self.cfg.frame_stack, self.cfg.action_repeat, record=self.cfg.save_video, 
                                                 vid_folder='eval videos', state_res=self.cfg.state_res, video_res=self.cfg.video_res)
-        print(f"embedding shape: {self.train_env.observation_space['embedding'].shape}")
+        print(f"img shape: {self.train_env.observation_space['wrist1'].shape}")
         print(f"state shape: {self.train_env.observation_space['state'].shape}")
         print(f"action shape: {self.train_env.action_space.shape}")
+
+        if self.cfg.remove_blue_channel:
+            self.num_channels = 2
+        else:
+            self.num_channels = 3
         
         # Create agent
         self.agent = make_agent(self.train_env.observation_space, self.train_env.action_space, self.cfg.agent)
@@ -92,40 +97,34 @@ class Workspace:
             self.cfg.save_buffer,
             self.cfg.nstep,
             self.cfg.discount,
-            'emb',)
+            'wrist1',
+            'wrist2',)
         self._replay_iter = None
         self.max_reward = -np.inf
     
     def create_environment(self, name, frame_stack=1, action_repeat=2, record=False, vid_folder='eval videos', state_res=128, video_res=224):
         proprio_keys = ["tcp_pose", "gripper_pos"]
         cameras = ["wrist1", "wrist2"]
-        print(f"augment: {self.cfg.augment}")
-        if self.cfg.augment:
-            self.i = 1
-            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, cameras=cameras, reward_type="dense", height=self.cfg.aug_res, width=self.cfg.aug_res, gripper_pause=True)
-        else:
-            self.i = 0
-            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, cameras=cameras, reward_type="dense", height=self.cfg.video_res, width=self.cfg.video_res, gripper_pause=True)
+        env = gym.make(name, render_mode='rgb_array', include_privileged_obs=True, ee_dof=6, cameras=cameras, reward_type="dense", height=video_res, width=video_res, gripper_pause=True)
         video_dir=os.path.join(self.work_dir, vid_folder)
         if action_repeat > 1:
             env = ActionRepeat(env, action_repeat)
         env = TimeLimit(env, max_episode_steps=self.cfg.max_episode_steps)
+        if self.cfg.remove_blue_channel:
+            env = RemoveBlueChannel(env, images_key="images")
         env = SERLObsWrapper(env, proprio_keys=proprio_keys)
         env = RotateImage(env, pixel_key="wrist1")
+        env = ActionState(env)
+        env = CustomPixelObservation(env, pixel_key="wrist1", crop_resolution=video_res, resize_resolution=state_res)
+        env = CustomPixelObservation(env, pixel_key="wrist2", crop_resolution=video_res, resize_resolution=state_res)
         if record:
             for image_name in cameras:
                     crop_res = env.observation_space[image_name].shape[0]
-                    env = VideoRecorder(env, video_dir, camera_name=image_name, crop_resolution=crop_res, resize_resolution=video_res, fps=20, record_every=2, write_reward=True)
-        env = ActionState(env)
-        if self.cfg.augment:
-            env = CustomPixelObservation(env, pixel_key="wrist1", crop_resolution=self.cfg.aug_res, resize_resolution=self.cfg.aug_res)
-            env = CustomPixelObservation(env, pixel_key="wrist2", crop_resolution=self.cfg.aug_res, resize_resolution=self.cfg.aug_res)
-        else:
-            env = CustomPixelObservation(env, pixel_key="wrist1", crop_resolution=video_res, resize_resolution=state_res)
-            env = CustomPixelObservation(env, pixel_key="wrist2", crop_resolution=video_res, resize_resolution=state_res)
-        env = SDVAEWrapperDualCam(env, augment=self.cfg.augment, res=state_res, pad=4, image1_key="wrist1", image2_key="wrist2")
-        env = StateFrameStack(env, frame_stack, stack_key='embedding', flatten=False)
-        env = StateFrameStack(env, frame_stack, stack_key='state')
+                    env = VideoRecorder(env, video_dir, camera_name=image_name, crop_resolution=state_res, resize_resolution=video_res, fps=20, record_every=2, write_reward=True)
+        env = PixelFrameStack(env, frame_stack, stack_key="wrist1")
+        env = PixelFrameStack(env, frame_stack, stack_key="wrist2")
+        env = StateFrameStack(env, frame_stack)
+        env = StateFrameStack(env, frame_stack, stack_key="priv_state")
         return env
 
     @property
@@ -159,16 +158,18 @@ class Workspace:
         while eval_until_episode(episode):
             obs, info = self.eval_env.reset()
             # Make sure all data is float32
-            emb = obs['embedding'].astype(np.float32)
+            wrist1  = obs['wrist1'].astype(np.float32)
+            wrist2  = obs['wrist2'].astype(np.float32)
             state = obs['state'].astype(np.float32)
             terminated = False
             truncated = False
             while not (terminated or truncated):
                 with torch.no_grad(), utils.eval_mode(self.agent):
-                    action = self.agent.act(emb[:,0].flatten(), self.global_step, True, obs_sensor=state)
+                    action = self.agent.act(wrist1, wrist2, self.global_step, True, obs_sensor=state)
                     action = self.scale_action(action).astype(np.float32)
                 obs, reward, terminated, truncated, info = self.eval_env.step(action)
-                emb = obs['embedding'].astype(np.float32)
+                wrist1 = obs['wrist1'].astype(np.float32)
+                wrist2 = obs['wrist2'].astype(np.float32)
                 state = obs['state'].astype(np.float32)
                 total_reward += reward
                 step += 1
@@ -198,14 +199,17 @@ class Workspace:
 
         episode_step, episode_reward = 0, 0
         obs, info = self.train_env.reset()
-        emb = obs['embedding'].astype(np.float32)
+        wrist1 = obs['wrist1'].astype(np.float32)
+        wrist2 = obs['wrist2'].astype(np.float32)
         state = obs['state'].astype(np.float32)
+        priv_state = obs['priv_state'].astype(np.float32)
         action = self.train_env.action_space.sample().astype(np.float32)
         reward = np.float32(0.0)
         terminated = False
         truncated = False
         first = True
-        time_step = {"emb": emb[-1, self.i], "state": state, "action": action, "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
+        time_step = {"wrist1": wrist1[-self.num_channels:], "wrist2": wrist2[-self.num_channels:], "state": state, "priv_state": priv_state, "action": action,
+                "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
         self.replay_storage.add(time_step)
         metrics = None
         while train_until_step(self.global_step):
@@ -229,13 +233,16 @@ class Workspace:
 
                 # reset env
                 obs, info = self.train_env.reset()
-                emb = obs['embedding'].astype(np.float32)
+                wrist1 = obs['wrist1'].astype(np.float32)
+                wrist2 = obs['wrist2'].astype(np.float32)
                 state = obs['state'].astype(np.float32)
+                priv_state = obs['priv_state'].astype(np.float32)
                 first = True
                 terminated = False
                 truncated = False
                 reward = np.float32(0.0)
-                time_step = {"emb": emb[-1, self.i], "state": state, "action": action, "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
+                time_step = {"wrist1": wrist1[-self.num_channels:], "wrist2": wrist2[-self.num_channels:], "state": state, "priv_state": priv_state, "action": action,
+                "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
                 self.replay_storage.add(time_step)
                 episode_step = 0
                 episode_reward = 0
@@ -254,7 +261,7 @@ class Workspace:
 
             # sample action
             with torch.no_grad(), utils.eval_mode(self.agent):
-                action = self.agent.act(emb[:,0].flatten(), self.global_step, False, obs_sensor=state)
+                action = self.agent.act(wrist1, wrist2, self.global_step, False, obs_sensor=state)
                 action = self.scale_action(action).astype(np.float32)
 
             # try to update the agent
@@ -285,12 +292,15 @@ class Workspace:
 
             # take env step
             obs, reward, terminated, truncated , info = self.train_env.step(action)
-            emb = obs['embedding'].astype(np.float32)
+            wrist1 = obs['wrist1'].astype(np.float32)
+            wrist2 = obs['wrist2'].astype(np.float32)
             state = obs['state'].astype(np.float32)
+            priv_state = obs['priv_state'].astype(np.float32)
             first = False
             reward = np.float32(reward)
             episode_reward += reward
-            time_step = {"emb": emb[-1, self.i], "state": state, "action": action, "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
+            time_step = {"wrist1": wrist1[-self.num_channels:], "wrist2": wrist2[-self.num_channels:], "state": state, "priv_state": priv_state, "action": action,
+                "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
             self.replay_storage.add(time_step)
             episode_step += 1
             self._global_step += 1
@@ -311,9 +321,9 @@ class Workspace:
         self.load_step = self._global_step
 
 
-@hydra.main(config_path='cfgs', config_name='config_sdvae_dual_cam')
+@hydra.main(config_path='cfgs', config_name='config_dual_cam_asym')
 def main(cfgs):
-    from train_states_dual_cam_sd_vae import Workspace as W
+    from train_states_dual_cam_asym import Workspace as W
     root_dir = Path.cwd()
     print(f"root_dir: {root_dir}")
     workspace = W(cfgs)

@@ -223,6 +223,12 @@ class VideoRecorder(gym.Wrapper):
         
         if self.current_episode % self.record_every == 0:
             frame = observation[self.camera_name].copy()
+
+            # --------- add a blue channel if we only have RG ----------
+            if frame.ndim == 3 and frame.shape[2] == 2:
+                # OpenCV expects BGR, so prepend zeros = B
+                b_plane = np.zeros_like(frame[..., 0:1])          # (H,W,1)
+                frame   = np.concatenate([frame, b_plane], axis=-1)  # (H,W,3)
             
             if self.crop_resolution is not None:
                 if frame.shape[:2] != (self.crop_h, self.crop_w):
@@ -677,3 +683,61 @@ class SERLObsWrapperRobomimic(gym.ObservationWrapper):
         if arr.dtype != np.uint8:
             arr = (arr * 255).clip(0,255).astype(np.uint8)
         return arr
+    
+import gymnasium as gym
+from gymnasium.spaces import Box, Dict
+import numpy as np
+from copy import deepcopy
+
+class RemoveBlueChannel(gym.ObservationWrapper):
+    """
+    Drop the blue channel (B) from every RGB image in `obs['images']`.
+
+    ▸ Works with images shaped (H, W, C) or (1, H, W, C)  
+    ▸ Preserves dtype, value range, and all other observation entries
+    """
+
+    def __init__(self, env: gym.Env, images_key: str = "images"):
+        super().__init__(env)
+        self.images_key = images_key
+
+        # ---- rebuild the observation‑space with C‑>C‑1 --------------------
+        orig_space = self.observation_space
+        if images_key not in orig_space.spaces:
+            raise KeyError(f"Expected '{images_key}' in observation dict")
+
+        new_spaces = deepcopy(orig_space.spaces)
+        img_space_dict = orig_space[images_key]
+        if not isinstance(img_space_dict, Dict):
+            raise TypeError(f"'{images_key}' must be a gym.spaces.Dict")
+
+        # Adjust every camera sub‑space
+        new_img_spaces = {}
+        for cam, space in img_space_dict.spaces.items():
+            h, w, c = space.shape[-3:]          # support (… H W C)
+            if c < 3:
+                raise ValueError(f"{cam} has <3 channels (shape {space.shape})")
+            new_shape = (*space.shape[:-1], c - 1)  # drop blue
+            new_img_spaces[cam] = Box(
+                low  = space.low  [..., :2],       # keep RG bounds
+                high = space.high [..., :2],
+                shape=new_shape,
+                dtype=space.dtype,
+            )
+        new_spaces[images_key] = Dict(new_img_spaces)
+
+        # Final wrapped observation‑space
+        self.observation_space = Dict(new_spaces)
+
+    # ------------------------------------------------------------------ #
+    #  Observation conversion
+    # ------------------------------------------------------------------ #
+    def observation(self, obs):
+        imgs = obs[self.images_key]
+        for cam, img in imgs.items():
+            # handle optional leading batch dim
+            if img.ndim == 4:                      # (1, H, W, C)
+                imgs[cam] = img[..., :2]           # keep R,G
+            else:                                  # (H, W, C)
+                imgs[cam] = img[..., :2]
+        return obs
