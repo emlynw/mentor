@@ -242,7 +242,7 @@ class Workspace:
         
         episode_buffer = []
 
-        episode_step, episode_reward = 0, 0
+        episode_step, episode_reward, episode_env_reward = 0, 0, 0
         obs, info = self.train_env.reset()
         emb = obs['embedding'].astype(np.float32)
         wrist1_old = obs['wrist1_old'].astype(np.float32)
@@ -273,12 +273,13 @@ class Workspace:
                 if self.use_delta_rewards:
                     for t in range(1, len(episode_buffer) - 1):
                         sparse_r = episode_buffer[t]['reward']
-                        delta    = dists[t-1] - dists[t]
+                        delta    = self.distance_scale*(dists[t-1] - dists[t])
                         episode_buffer[t]['reward'] = self.alpha * (sparse_r + delta)
                 else:
                     for t in range(0, len(episode_buffer)):
                         sparse_r = episode_buffer[t]['reward']
                         episode_buffer[t]['reward'] = self.alpha * (sparse_r - self.distance_scale*dists[t])
+                episode_reward = sum([t['reward'] for t in episode_buffer])
 
                 # ——— push them all into the replay buffer at once ———
                 for transition in episode_buffer:
@@ -300,6 +301,7 @@ class Workspace:
                         log('fps', episode_frame / elapsed_time)
                         log('total_time', total_time)
                         log('episode_reward', episode_reward)
+                        log('episode_env_reward', episode_env_reward)
                         log('episode_end_reward', reward)
                         log('episode_length', episode_frame)
                         log('episode', self.global_episode)
@@ -319,6 +321,7 @@ class Workspace:
                 episode_buffer.append(time_step)
                 episode_step = 0
                 episode_reward = 0
+                episode_env_reward = 0
 
             # try to evaluate
             if eval_every_step(self.global_step):
@@ -370,7 +373,7 @@ class Workspace:
             state = obs['state'].astype(np.float32)
             first = False
             reward = np.float32(reward)
-            episode_reward += reward
+            episode_env_reward += info['dense_reward'] if 'dense_reward' in info else reward
             time_step = {"emb": emb[-1, self.i], "wrist1_old": wrist1_old, "state": state, "action": action, "reward": reward, "first": first, "terminated": terminated, "truncated": truncated}
             episode_buffer.append(time_step)
             episode_step += 1

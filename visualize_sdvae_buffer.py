@@ -8,7 +8,7 @@ from pathlib import Path
 from sd_vae_decode import latent_to_rgb
 
 # Path containing your .npz replay-episode files
-DEMO_BUFFER_PATH = "/home/emlyn/rl_franka/mentor/exp_local/2025.07.30/152418_/buffer"
+DEMO_BUFFER_PATH = "/home/emlyn/rl_franka/mentor/exp_local/2025.07.30/164713_/buffer"
 
 def main():
     # Collect all .npz files in DEMO_BUFFER_PATH
