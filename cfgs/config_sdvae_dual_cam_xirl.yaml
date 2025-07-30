@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task@_global_: fruit_gym_multi
+  - task@_global_: fruit_gym_single
   - agent@_global_: mentor_states_pretrained
   - override hydra/launcher: submitit_local
 
@@ -46,9 +46,9 @@ augment: true
 # XIRL
 use_delta_rewards: true
 reward_res: 84
-goal_emb_path: /home/emlyn/xirl_results/pretrain_runs/gcr_pull_anchors_tri_mine_2/goal_emb.pkl
-distance_scale_path: /home/emlyn/xirl_results/pretrain_runs/gcr_pull_anchors_tri_mine_2/distance_scale.pkl
-ckpt_path: /home/emlyn/xirl_results/pretrain_runs/gcr_pull_anchors_tri_mine_2/checkpoints/2200.ckpt
+goal_emb_path: /home/emlyn/rl_franka/reward_models/gcr_pull_anchors_tri_mine_2/goal_emb.pkl
+distance_scale_path: /home/emlyn/rl_franka/reward_models/gcr_pull_anchors_tri_mine_2/distance_scale.pkl
+ckpt_path: /home/emlyn/rl_franka/reward_models/gcr_pull_anchors_tri_mine_2/2200.ckpt
 
 
 hydra:

@@ -104,8 +104,8 @@ class Workspace:
         self.eval_env = self.create_environment(self.cfg.task_name, self.cfg.frame_stack, self.cfg.action_repeat, record=self.cfg.save_video, 
                                                 vid_folder='eval videos', state_res=self.cfg.state_res, video_res=self.cfg.video_res,
                                                 wrap_reward=True, reward_model=self.reward_model, goal_emb=self.goal_emb, 
-                                                distance_scale=self.distance_scale, alpha=self.alpha)
-        
+                                                distance_scale=self.distance_scale, use_delta_rewards=self.use_delta_rewards, alpha=self.alpha)
+
         print(f"embedding shape: {self.train_env.observation_space['embedding'].shape}")
         print(f"state shape: {self.train_env.observation_space['state'].shape}")
         print(f"action shape: {self.train_env.action_space.shape}")
