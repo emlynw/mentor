@@ -126,57 +126,89 @@ class StateFrameStack(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
 class CustomPixelObservation(gym.ObservationWrapper):
-    """Resize (and optionally crop) the pixel observation to a given resolution, handling any number of channels."""
-    def __init__(self, env, pixel_key='pixels', crop_resolution=None, resize_resolution=None):
+    """Resize (and optionally crop) a pixel observation."""
+
+    def __init__(
+        self,
+        env: gym.Env,
+        *,
+        pixel_key: str = "pixels",
+        crop_resolution=None,
+        resize_resolution=None,
+        save_old: bool = False,
+        old_key: str = "old"
+    ):
         super().__init__(env)
-        
-        # Allow integer input to be converted into (H, W) tuples.
+
+        # Handle int → (H, W) shorthand ----------------------------------------
         if isinstance(resize_resolution, int):
             resize_resolution = (resize_resolution, resize_resolution)
         if isinstance(crop_resolution, int):
             crop_resolution = (crop_resolution, crop_resolution)
-            
+
         self.pixel_key = pixel_key
+        self.save_old = save_old
+        self.pixel_key_old = f"{pixel_key}_{old_key}" if save_old else None
         self.crop_resolution = crop_resolution
         self.resize_resolution = resize_resolution
-        
-        # Retrieve the original number of channels from the environment's observation space.
-        orig_shape = self.observation_space[pixel_key].shape  # e.g., (H_orig, W_orig, C)
+
+        # ---------------------------------------------------------------------
+        #  Build the new observation‑space
+        # ---------------------------------------------------------------------
+        orig_space = self.observation_space
+        if not isinstance(orig_space, Dict):
+            raise TypeError("Environment observation space must be gym.spaces.Dict")
+        if pixel_key not in orig_space.spaces:
+            raise KeyError(f"Expected '{pixel_key}' in observation dict")
+
+        new_spaces = deepcopy(orig_space.spaces)
+        orig_pix_space: Box = orig_space[pixel_key]
+        orig_shape = orig_pix_space.shape
         n_channels = orig_shape[-1]
-        
-        # Determine new shape: if resize_resolution is provided, use that; otherwise, keep the original spatial size.
-        if self.resize_resolution is not None:
-            new_shape = (*self.resize_resolution, n_channels)
+
+        # Shape after optional resize -----------------------------------------
+        if resize_resolution is not None:
+            new_shape = (*resize_resolution, n_channels)
         else:
             new_shape = orig_shape
-        
-        # Update the observation space with the new shape.
-        self.observation_space[pixel_key] = Box(low=0, high=255, shape=new_shape, dtype=np.uint8)
 
+        # Update processed image space
+        new_spaces[pixel_key] = Box(low=0, high=255, shape=new_shape, dtype=np.uint8)
+
+        # Optionally add space for the original image -------------------------
+        if save_old:
+            new_spaces[self.pixel_key_old] = deepcopy(orig_pix_space)
+
+        self.observation_space = Dict(new_spaces)
+
+    # ---------------------------------------------------------------------
+    #  Observation conversion
+    # ---------------------------------------------------------------------
     def observation(self, observation):
-        pixels = observation[self.pixel_key]
-        
-        # Crop the image if a crop resolution is provided.
-        if self.crop_resolution is not None:
-            # Only crop if the current spatial dimensions don't match the desired crop resolution.
-            if pixels.shape[:2] != self.crop_resolution:
-                orig_h, orig_w = pixels.shape[:2]
-                crop_h, crop_w = self.crop_resolution
-                # Compute top-left coordinates for center crop.
-                y = int((orig_h - crop_h) / 2)
-                x = int((orig_w - crop_w) / 2)
-                pixels = pixels[y:y+crop_h, x:x+crop_w]
-        
-        # Resize the image if a resize resolution is provided.
-        if self.resize_resolution is not None:
-            # Only resize if the spatial dimensions don't already match.
-            if pixels.shape[:2] != self.resize_resolution:
-                pixels = cv2.resize(
-                    pixels,
-                    dsize=self.resize_resolution,
-                    interpolation=cv2.INTER_CUBIC,
-                )
-        
+        original_pixels = observation[self.pixel_key]
+
+        # Preserve original if requested
+        if self.save_old:
+            observation[self.pixel_key_old] = original_pixels.copy()
+
+        pixels = original_pixels  # work on a local reference
+
+        # 1) Centre‑crop ------------------------------------------------------
+        if self.crop_resolution is not None and pixels.shape[:2] != self.crop_resolution:
+            h, w = pixels.shape[:2]
+            crop_h, crop_w = self.crop_resolution
+            y0 = (h - crop_h) // 2
+            x0 = (w - crop_w) // 2
+            pixels = pixels[y0 : y0 + crop_h, x0 : x0 + crop_w]
+
+        # 2) Resize -----------------------------------------------------------
+        if self.resize_resolution is not None and pixels.shape[:2] != self.resize_resolution:
+            pixels = cv2.resize(
+                pixels,
+                dsize=self.resize_resolution,
+                interpolation=cv2.INTER_CUBIC,
+            )
+
         observation[self.pixel_key] = pixels
         return observation
   
@@ -683,11 +715,6 @@ class SERLObsWrapperRobomimic(gym.ObservationWrapper):
         if arr.dtype != np.uint8:
             arr = (arr * 255).clip(0,255).astype(np.uint8)
         return arr
-    
-import gymnasium as gym
-from gymnasium.spaces import Box, Dict
-import numpy as np
-from copy import deepcopy
 
 class RemoveBlueChannel(gym.ObservationWrapper):
     """
@@ -735,9 +762,51 @@ class RemoveBlueChannel(gym.ObservationWrapper):
     def observation(self, obs):
         imgs = obs[self.images_key]
         for cam, img in imgs.items():
-            # handle optional leading batch dim
-            if img.ndim == 4:                      # (1, H, W, C)
-                imgs[cam] = img[..., :2]           # keep R,G
-            else:                                  # (H, W, C)
-                imgs[cam] = img[..., :2]
+            imgs[cam] = img[..., :2]
         return obs
+    
+class RemoveBlueChannelSingle(gym.ObservationWrapper):
+    """
+    Drop the blue channel (B) from a single RGB image stored in `obs[image_key]`.
+
+    ▸ Works with images shaped (H, W, C) or (1, H, W, C)
+    ▸ Preserves dtype, value range, and all other observation entries
+    """
+
+    def __init__(self, env: gym.Env, image_key: str = "image"):
+        super().__init__(env)
+        self.image_key = image_key
+
+        # ---- rebuild the observation‑space with C‑>C‑1 --------------------
+        orig_space = self.observation_space
+        if image_key not in orig_space.spaces:
+            raise KeyError(f"Expected '{image_key}' in observation dict")
+
+        new_spaces = deepcopy(orig_space.spaces)
+        img_space = orig_space[image_key]
+        if not isinstance(img_space, Box):
+            raise TypeError(f"'{image_key}' must be a gym.spaces.Box")
+
+        # Adjust the image sub‑space
+        h, w, c = img_space.shape[-3:]        # support (… H W C)
+        if c < 3:
+            raise ValueError(f"{image_key} has <3 channels (shape {img_space.shape})")
+        new_shape = (*img_space.shape[:-1], c - 1)  # drop blue
+
+        new_spaces[image_key] = Box(
+            low  = img_space.low  [..., :2],   # keep RG bounds
+            high = img_space.high [..., :2],
+            shape=new_shape,
+            dtype=img_space.dtype,
+        )
+
+        # Final wrapped observation‑space
+        self.observation_space = Dict(new_spaces)
+
+    # ------------------------------------------------------------------ #
+    #  Observation conversion
+    # ------------------------------------------------------------------ #
+    def observation(self, obs):
+        obs[self.image_key] = obs[self.image_key][..., :2]
+        return obs
+

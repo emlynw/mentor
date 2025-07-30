@@ -115,7 +115,6 @@ class SDVAEWrapper(gym.ObservationWrapper):
 
     # --------------- main hook -----------------------------------
     def observation(self, observation):
-        start_time = time.time()
         pil = Image.fromarray(observation[self.image_key])
         processed = self.preproc(images=pil, return_tensors="pt").pixel_values.to(self.device, self.dtype)
         if self.augment:
