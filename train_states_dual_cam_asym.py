@@ -158,8 +158,8 @@ class Workspace:
         while eval_until_episode(episode):
             obs, info = self.eval_env.reset()
             # Make sure all data is float32
-            wrist1  = obs['wrist1'].astype(np.float32)
-            wrist2  = obs['wrist2'].astype(np.float32)
+            wrist1  = obs['wrist1']
+            wrist2  = obs['wrist2']
             state = obs['state'].astype(np.float32)
             terminated = False
             truncated = False
@@ -168,8 +168,8 @@ class Workspace:
                     action = self.agent.act(wrist1, wrist2, self.global_step, True, obs_sensor=state)
                     action = self.scale_action(action).astype(np.float32)
                 obs, reward, terminated, truncated, info = self.eval_env.step(action)
-                wrist1 = obs['wrist1'].astype(np.float32)
-                wrist2 = obs['wrist2'].astype(np.float32)
+                wrist1 = obs['wrist1']
+                wrist2 = obs['wrist2']
                 state = obs['state'].astype(np.float32)
                 total_reward += reward
                 step += 1
@@ -199,8 +199,8 @@ class Workspace:
 
         episode_step, episode_reward = 0, 0
         obs, info = self.train_env.reset()
-        wrist1 = obs['wrist1'].astype(np.float32)
-        wrist2 = obs['wrist2'].astype(np.float32)
+        wrist1 = obs['wrist1']
+        wrist2 = obs['wrist2']
         state = obs['state'].astype(np.float32)
         priv_state = obs['priv_state'].astype(np.float32)
         action = self.train_env.action_space.sample().astype(np.float32)
@@ -233,8 +233,8 @@ class Workspace:
 
                 # reset env
                 obs, info = self.train_env.reset()
-                wrist1 = obs['wrist1'].astype(np.float32)
-                wrist2 = obs['wrist2'].astype(np.float32)
+                wrist1 = obs['wrist1']
+                wrist2 = obs['wrist2']
                 state = obs['state'].astype(np.float32)
                 priv_state = obs['priv_state'].astype(np.float32)
                 first = True
@@ -292,8 +292,8 @@ class Workspace:
 
             # take env step
             obs, reward, terminated, truncated , info = self.train_env.step(action)
-            wrist1 = obs['wrist1'].astype(np.float32)
-            wrist2 = obs['wrist2'].astype(np.float32)
+            wrist1 = obs['wrist1']
+            wrist2 = obs['wrist2']
             state = obs['state'].astype(np.float32)
             priv_state = obs['priv_state'].astype(np.float32)
             first = False
