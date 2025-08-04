@@ -103,10 +103,10 @@ class Workspace:
         print(f"augment: {self.cfg.augment}")
         if self.cfg.augment:
             self.i = 1
-            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.aug_res, width=self.cfg.aug_res, gripper_pause=True)
+            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.aug_res, width=self.cfg.aug_res, gripper_pause=False)
         else:
             self.i = 0
-            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.video_res, width=self.cfg.video_res, gripper_pause=True)
+            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.video_res, width=self.cfg.video_res, gripper_pause=False)
         video_dir=os.path.join(self.work_dir, vid_folder)
         if action_repeat > 1:
             env = ActionRepeat(env, action_repeat)
@@ -200,7 +200,7 @@ class Workspace:
 
         episode_step, episode_reward = 0, 0
         obs, info = self.train_env.reset()
-        emb = obs['embedding'].astype(np.float32)
+        emb = obs['embedding']
         state = obs['state'].astype(np.float32)
         priv_state = obs['priv_state'].astype(np.float32)
         action = self.train_env.action_space.sample().astype(np.float32)
@@ -232,7 +232,7 @@ class Workspace:
 
                 # reset env
                 obs, info = self.train_env.reset()
-                emb = obs['embedding'].astype(np.float32)
+                emb = obs['embedding']
                 state = obs['state'].astype(np.float32)
                 priv_state = obs['priv_state'].astype(np.float32)
                 first = True
@@ -258,7 +258,7 @@ class Workspace:
 
             # sample action
             with torch.no_grad(), utils.eval_mode(self.agent):
-                action = self.agent.act(emb[:,0].flatten(), self.global_step, False, obs_sensor=state)
+                action = self.agent.act(emb[:,0].flatten().astype(np.float32), self.global_step, False, obs_sensor=state)
                 action = self.scale_action(action).astype(np.float32)
 
             # try to update the agent
@@ -289,7 +289,7 @@ class Workspace:
 
             # take env step
             obs, reward, terminated, truncated , info = self.train_env.step(action)
-            emb = obs['embedding'].astype(np.float32)
+            emb = obs['embedding']
             state = obs['state'].astype(np.float32)
             priv_state = obs['priv_state'].astype(np.float32)
             first = False
