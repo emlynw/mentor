@@ -1,4 +1,4 @@
-frame_stack: 1
+frame_stack: 3
 expectile: 0.7
 agent:
   _target_: agents.mentor_states_dual_cam_asym.MENTORAgent
