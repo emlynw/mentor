@@ -103,10 +103,10 @@ class Workspace:
         print(f"augment: {self.cfg.augment}")
         if self.cfg.augment:
             self.i = 1
-            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.aug_res, width=self.cfg.aug_res, gripper_pause=False)
+            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.aug_res, width=self.cfg.aug_res, gripper_pause=True)
         else:
             self.i = 0
-            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.video_res, width=self.cfg.video_res, gripper_pause=False)
+            env = gym.make(name, render_mode='rgb_array', ee_dof = 6, include_privileged_obs=True, cameras=cameras, reward_type="dense", height=self.cfg.video_res, width=self.cfg.video_res, gripper_pause=True)
         video_dir=os.path.join(self.work_dir, vid_folder)
         if action_repeat > 1:
             env = ActionRepeat(env, action_repeat)
