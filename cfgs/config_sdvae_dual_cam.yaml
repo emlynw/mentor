@@ -22,7 +22,7 @@ save_buffer: true
 use_wandb: true
 # replay buffer
 replay_buffer_size: 650000
-replay_buffer_num_workers: 4
+replay_buffer_num_workers: 2
 nstep: 3
 batch_size: 256
 # misc
