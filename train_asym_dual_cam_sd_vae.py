@@ -225,6 +225,7 @@ class Workspace:
                         log('total_time', total_time)
                         log('episode_reward', episode_reward)
                         log('episode_end_reward', reward)
+                        log('blocks_picked', info.get('blocks_picked', 0))
                         log('episode_length', episode_frame)
                         log('episode', self.global_episode)
                         log('buffer_size', len(self.replay_storage))
